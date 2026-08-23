@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -14,6 +15,44 @@ SPEC.loader.exec_module(MODULE)
 
 
 class StarHistoryRenderingTests(unittest.TestCase):
+    def test_build_daily_points_returns_zero_baseline_when_no_stars(self) -> None:
+        points = MODULE.build_daily_points([], empty_date=dt.date(2026, 8, 22))
+        self.assertEqual(points, [(dt.date(2026, 8, 22), 0)])
+
+    def test_build_daily_points_still_rejects_missing_timestamps_with_items(self) -> None:
+        with self.assertRaises(RuntimeError):
+            MODULE.build_daily_points(
+                [{"login": "someone"}],
+                empty_date=dt.date(2026, 8, 22),
+            )
+
+    def test_github_json_uses_authorization_header_when_token_is_provided(self) -> None:
+        captured: dict[str, str | None] = {}
+
+        class FakeResponse:
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"{}"
+
+        def fake_urlopen(request, timeout=45):
+            captured["Authorization"] = request.get_header("Authorization")
+            captured["Accept"] = request.get_header("Accept")
+            return FakeResponse()
+
+        with mock.patch.object(MODULE.urllib.request, "urlopen", side_effect=fake_urlopen):
+            MODULE.github_json("https://api.github.com/repos/example/project", "test-token", retries=0)
+
+        self.assertIsNotNone(captured["Authorization"])
+        assert captured["Authorization"] is not None
+        self.assertTrue(captured["Authorization"].startswith("Bearer "))
+        self.assertTrue(captured["Authorization"].endswith("test-token"))
+        self.assertEqual(captured["Accept"], "application/vnd.github.star+json")
+
     def test_default_star_marker_is_prominent(self) -> None:
         vertices = [
             tuple(float(value) for value in vertex.split(","))
@@ -80,6 +119,15 @@ class StarHistoryRenderingTests(unittest.TestCase):
         self.assertIn('fill="#e11d48">100</text>', svg)
         self.assertIn(">Current Star Count</text>", svg)
         self.assertNotIn(">100 stars</text>", svg)
+
+    def test_svg_renders_zero_star_baseline(self) -> None:
+        svg = MODULE.generate_svg(
+            "example/project",
+            [(dt.date(2026, 8, 22), 0)],
+            dt.datetime(2026, 8, 22, tzinfo=dt.timezone.utc),
+        )
+        self.assertIn('aria-label="Current star count: 0"', svg)
+        self.assertIn(">0</text>", svg)
 
 
 if __name__ == "__main__":
