@@ -156,7 +156,10 @@ def fetch_stargazers(repo: str, token: str | None, workers: int, retries: int) -
     return items
 
 
-def build_daily_points(items: list[dict]) -> list[tuple[dt.date, int]]:
+def build_daily_points(
+    items: list[dict],
+    empty_date: dt.date | None = None,
+) -> list[tuple[dt.date, int]]:
     dates = []
     for item in items:
         starred_at = item.get("starred_at")
@@ -165,6 +168,8 @@ def build_daily_points(items: list[dict]) -> list[tuple[dt.date, int]]:
         dates.append(dt.datetime.fromisoformat(starred_at.replace("Z", "+00:00")).date())
 
     if not dates:
+        if not items and empty_date is not None:
+            return [(empty_date, 0)]
         raise RuntimeError(
             "GitHub did not return starred_at timestamps. "
             "Make sure the request uses Accept: application/vnd.github.star+json and a token with access."
@@ -186,13 +191,17 @@ def build_daily_points(items: list[dict]) -> list[tuple[dt.date, int]]:
 
 def nice_y_ticks(max_y: int) -> list[int]:
     rough_step = max_y / 5
-    power = 10 ** math.floor(math.log10(rough_step)) if rough_step > 0 else 1
-    step = power
-    for multiplier in (1, 2, 5, 10):
-        step = multiplier * power
-        if rough_step <= step:
-            break
-    ticks = list(range(0, int(math.ceil(max_y / step) * step) + 1, int(step)))
+    if rough_step <= 1:
+        step = 1
+    else:
+        power = 10 ** math.floor(math.log10(rough_step))
+        step = power
+        for multiplier in (1, 2, 5, 10):
+            step = multiplier * power
+            if rough_step <= step:
+                break
+        step = max(1, int(step))
+    ticks = list(range(0, int(math.ceil(max_y / step) * step) + 1, step))
     if ticks[-1] < max_y:
         ticks.append(max_y)
     return ticks
@@ -378,11 +387,11 @@ def main() -> int:
     if "/" not in args.repo:
         raise SystemExit("--repo must be in owner/name form")
 
+    generated_at = dt.datetime.now(dt.timezone.utc)
     items = fetch_stargazers(args.repo, args.token, args.workers, args.retries)
-    points = build_daily_points(items)
+    points = build_daily_points(items, empty_date=generated_at.date())
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    generated_at = dt.datetime.now(dt.timezone.utc)
     svg = generate_svg(args.repo, points, generated_at)
     output.write_text(svg, encoding="utf-8")
     cache_token = generated_at.strftime("%Y%m%dT%H%M%SZ")
