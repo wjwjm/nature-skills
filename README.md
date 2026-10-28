@@ -617,4 +617,4 @@ description: >-
 
 ## 8. Star 历史
 
-[![Star History Chart](assets/star-history-20261025T073420Z.svg)](https://star-history.com/#Yuan1z0825/nature-skills&Date)
+[![Star History Chart](assets/star-history-20261028T082805Z.svg)](https://star-history.com/#Yuan1z0825/nature-skills&Date)
